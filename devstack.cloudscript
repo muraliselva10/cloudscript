@@ -101,6 +101,13 @@ apt-get update
 # Install git
 apt-get install git -y
 
+# neutron config 
+add-br br-ex
+sudo ovs-vsctl add-port br-ex eth1
+sudo ovs-vsctl show
+sudo service iptables save
+sudo ufw disable
+
 # Clone devstack repo from stable branch
 cd /opt
 git clone -b {{ devstack_branch }} https://github.com/openstack-dev/devstack.git
@@ -111,6 +118,9 @@ cat <<\EOF>/opt/devstack/local.conf
 #Network 
 #HOST_IP=
 HOST_IP_IFACE=eth0
+FIXED_RANGE=10.0.0.0/24
+FLOATING_RANGE=10.134.152.0/24
+PUBLIC_NETWORK_GATEWAY=10.134.152.2
 
 # Database user
 DATABASE_USER=root
@@ -144,6 +154,19 @@ ENABLED_SERVICES+=,cinder,c-api,c-vol,c-sch,c-bak
 ENABLED_SERVICES+=,heat,h-api,h-api-cfn,h-api-cw,h-eng
 ENABLED_SERVICES+=,trove,tr-api,tr-tmgr,tr-cond
 ENABLED_SERVICES+=,horizon
+
+# for neutron config
+disable_service n-net
+enable_service q-svc
+enable_service q-agt
+enable_service q-dhcp
+enable_service q-meta
+enable_service q-l3
+Q_USE_SECGROUP=True
+ENABLE_TENANT_VLANS=True
+TENANT_VLAN_RANGE=1000:1999
+PHYSICAL_NETWORK=default
+OVS_PHYSICAL_BRIDGE=br-ex
 
 # Enable Logging
 LOGFILE=/opt/stack/logs/stack.sh.log
