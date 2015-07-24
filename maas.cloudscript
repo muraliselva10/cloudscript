@@ -1,0 +1,145 @@
+# Install maas setup on a CS4.4-SSD Cloudlet ($.06/hr) running Linux Ubuntu Server 14.04 LTS 64-bit
+cloudscript maas
+    version                 = _latest
+    result_template         = maas_result_template
+
+globals
+    maas_hostname           = 'maas'
+    maas_instance_type 	    = 'CS4.4-SSD' # 4GB RAM, 4 vCore, 100GB SSD, 10Gbps
+    maas_image_type    	    = 'Ubuntu Server 14.04 LTS'
+    maas_slice_user    	    = 'maas'
+    oneforall_password      = lib::random_password()
+    server_password         = lib::random_password()
+    console_password        = lib::random_password()
+
+thread maas_setup
+    tasks                   = [maas_server_setup]
+
+task maas_server_setup
+
+    #----------------------
+    # Create maas keys
+    #----------------------
+
+    # Create maas all-for-one password key
+    /key/password maas_oneforall_password_key read_or_create
+        key_group           = _SERVER
+        password            = oneforall_password
+
+    # Create maas server root password key
+    /key/password maas_server_password_key read_or_create
+        key_group           = _SERVER
+        password            = server_password
+
+    # Create maas server console key
+    /key/password maas_server_console_key read_or_create
+        key_group           = _CONSOLE
+        password            = console_password
+
+    #--------------------------------
+    # Create maas storage slice,
+    # bootstrap script and recipe
+    #--------------------------------
+
+    # Create storage slice keys
+    /key/token maas_slice_key read_or_create
+        username            = maas_slice_user
+
+    # Create slice to store script in cloudstorage
+
+    /storage/slice maas_slice read_or_create
+        keys                = [maas_slice_key]
+
+    # Create slice container to store script in cloudstorage
+    /storage/container maas_container => [maas_slice] read_or_create
+        slice               = maas_slice
+
+    # Place script data in cloudstorage
+
+    /storage/object maas_bootstrap_object => [maas_slice, maas_container] read_or_create
+        container_name      = 'maas_container'
+        file_name           = 'bootstrap_maas.sh'
+        slice               = maas_slice
+        content_data        = maas_bootstrap_data
+
+    # Associate the cloudstorage object with the maas script
+    /orchestration/script maas_bootstrap_script => [maas_slice, maas_container, maas_bootstrap_object] read_or_create
+        data_uri            = 'cloudstorage://maas_slice/maas_container/bootstrap_maas.sh'
+        script_type         = _SHELL
+        encoding            = _STORAGE
+
+    # Create the recipe and associate the script
+    /orchestration/recipe maas_bootstrap_recipe read_or_create
+        scripts             = [maas_bootstrap_script]
+
+    #
+    # Create the maas server
+    #
+
+    /server/cloud maas_server read_or_create
+        hostname            = '{{ maas_hostname }}'
+        image               = '{{ maas_image_type }}'
+        service_type        = '{{ maas_instance_type }}'
+        keys                = [maas_server_password_key, maas_server_console_key]
+        recipes             = [maas_bootstrap_recipe]
+        recipe_timeout      = 1800
+
+text_template maas_bootstrap_data
+
+#!/bin/sh
+cd /root
+
+# Install necessary packages
+apt-get -y update
+apt-get -y upgrade
+apt-get -y autoclean
+apt-get -y autoremove
+apt-get -y install vagrant
+apt-get -y install virtualbox
+cd /root
+
+# create directory for hosting vagrant
+mkdir vbox32
+cd vbox32
+vboxmanage -version
+
+# use vagrant box created and hosted in NS cloud
+# Create vagrant box with image in NS Cloud
+vagrant init maas_new http://public.sjc1.nephoscale.com/v1/AUTH_060151c0-8cc4-4314-a302-6f702c343747/maas_new_container/maas_new.box
+
+# For configuring port forwarding
+sed -i 's/# config.vm.network :forwarded_port/config.vm.network :forwarded_port, guest: 80, host: 8080/' Vagrantfile
+
+# invoke vagrant
+vagrant up
+
+# put process in sleep
+sleep 2m
+
+# create new directory for hosting vagrant
+mkdir /root/vtest2
+cd /root/vtest2
+vboxmanage -version
+
+# create a vagrant with precise32 image
+vagrant init precise32 http://files.vagrantup.com/precise32.box
+
+# invoke vagrant
+vagrant up
+
+_eof
+
+text_template maas_result_template
+
+Your setup will be ready in few minutes.
+
+You can verify the same by accessing the following URL:
+
+http://{{ maas_server.ipaddress_public }}:8080/MAAS
+
+
+You can login via ssh to: {{ maas_server.ipaddress_public }}
+Login: root
+Password: {{ maas_server_password_key.password }}
+
+_eof
