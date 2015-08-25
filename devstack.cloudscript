@@ -187,6 +187,9 @@ mv /opt/devstack/local.conf.tmp /opt/devstack/local.conf
 # Change privileges
 chown -R stack:stack /opt/devstack
 
+# Installing futures==2.2.0 (Fix for issue in distribution conflicts)
+sudo pip install futures==2.2.0
+
 # Create stack
 su stack -c /opt/devstack/stack.sh
 
